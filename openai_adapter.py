@@ -103,7 +103,7 @@ def openai_to_anthropic_request(payload):
     anthropic_messages = _merge_consecutive_roles(anthropic_messages)
 
     result = {
-        'model': payload.get('model', 'claude-sonnet-4-6'),
+        'model': payload.get('model', 'claude-sonnet-4-5'),  # 修正为实际存在的模型名
         'messages': anthropic_messages,
         'max_tokens': max(payload.get('max_tokens') or 8192, 8192),
     }
@@ -290,7 +290,7 @@ def anthropic_to_openai_response(response_data, request_id=None):
 # ─── 流式响应转换 ────────────────────────────────────────────
 
 def init_stream_state(request_id):
-    """初始化流式状态"""
+    """初始化流式状态，清除可能残留的旧状态"""
     _STREAM_TOOL_STATE[request_id] = {
         'tool_index': -1,
         'tool_buf': '',
@@ -314,7 +314,17 @@ def anthropic_to_openai_stream_chunk(event_type, event_data, request_id):
     if not request_id:
         request_id = _gen_id()
 
-    state = _STREAM_TOOL_STATE.get(request_id, {})
+    # 如果 state 不存在（超时重连、init 未调用等异常情况），自动补全默认值防止 KeyError
+    if request_id not in _STREAM_TOOL_STATE:
+        _STREAM_TOOL_STATE[request_id] = {
+            'tool_index': -1,
+            'tool_buf': '',
+            'current_tool_id': None,
+            'current_tool_name': None,
+            'input_tokens': 0,
+            'output_tokens': 0,
+        }
+    state = _STREAM_TOOL_STATE[request_id]  # 引用字典内对象，修改直接生效
     chunks = []
 
     if event_type == 'message_start':
